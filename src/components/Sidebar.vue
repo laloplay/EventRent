@@ -54,6 +54,7 @@ const esAdministrador = computed(() => {
 });
 
 // Agregamos la propiedad 'soloAdmin: true' al nuevo menú de Usuarios
+//comentario
 const menuItems = [
   { id: 'dashboard', name: 'Panel Principal', icon: LayoutDashboard },
   { id: 'inventario', name: 'Inventario', icon: Package },
@@ -63,3 +64,4 @@ const menuItems = [
   { id: 'usuarios', name: 'Gestión de Usuarios', icon: UserCog, soloAdmin: true }, // <-- NUEVO BOTÓN PROTEGIDO
 ];
 </script>
+

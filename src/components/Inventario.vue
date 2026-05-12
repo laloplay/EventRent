@@ -10,7 +10,7 @@
           <button @click="mostrarModalCategorias = true" class="bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-xl text-sm font-bold hover:bg-slate-50 transition-colors flex items-center gap-2">
             <FolderTree class="w-4 h-4" /> Categorías
           </button>
-          <button @click="abrirModalNuevo" class="bg-slate-900 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-indigo-600 transition-colors flex items-center gap-2">
+          <button @click="abrirModalNuevo" clasS="bg-slate-900 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-indigo-600 transition-colors flex items-center gap-2">
             <Plus class="w-4 h-4" /> Agregar Producto
           </button>
         </div>
