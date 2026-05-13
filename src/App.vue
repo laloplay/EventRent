@@ -158,4 +158,6 @@ const verificarCredenciales = async () => {
     passwordConfirmacion.value = ''; 
   }
 };
+
+//prueba
 </script>
