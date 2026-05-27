@@ -30,7 +30,8 @@
           <ClientesView v-if="currentView === 'clientes'" />
           <RentasView v-if="currentView === 'rentas'" />
           <UsuariosView v-if="currentView === 'usuarios'" />
-          
+          <PagosView v-if="currentView === 'pagos'" />
+          <ReparacionesView v-if="currentView === 'reparaciones'" />
         </div>
       </main>
     </div>
@@ -86,6 +87,8 @@ import Inventario from './components/Inventario.vue';
 import ClientesView from './components/ClientesView.vue';
 import RentasView from './components/RentasView.vue';
 import UsuariosView from './components/UsuariosView.vue';
+import PagosView from './components/PagosView.vue';
+import ReparacionesView from './components/ReparacionesView.vue';
 
 const estaAutenticado = ref(false);
 const usuarioActual = ref(null);

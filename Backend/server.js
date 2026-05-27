@@ -21,7 +21,7 @@ pool.on('connect', (client) => {
 
 const initDB = async () => {
   try {
-    
+
     // 1. Tabla Usuarios 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS usuarios (
@@ -60,7 +60,7 @@ const initDB = async () => {
       );
     `);
 
-    // 5. Tabla Mobiliario
+    // 5. Tabla Mobiliario (Actualizada con el interruptor "activo")
     await pool.query(`
       CREATE TABLE IF NOT EXISTS mobiliario (
         id SERIAL PRIMARY KEY,
@@ -68,7 +68,8 @@ const initDB = async () => {
         tipo VARCHAR(255) NOT NULL,
         cantidad_disponible INTEGER NOT NULL,
         precio DECIMAL(10, 2) NOT NULL,
-        id_categoria INTEGER REFERENCES categorias(id) ON DELETE SET NULL
+        id_categoria INTEGER REFERENCES categorias(id) ON DELETE SET NULL,
+        activo BOOLEAN DEFAULT true
       );
     `);
 
@@ -96,7 +97,40 @@ const initDB = async () => {
       );
     `);
 
-    
+    // 8. Tabla Pagos
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS pagos (
+        id SERIAL PRIMARY KEY,
+        id_solicitud INTEGER REFERENCES solicitudes(id) ON DELETE CASCADE,
+        monto DECIMAL(10, 2) NOT NULL,
+        metodo VARCHAR(50) NOT NULL,
+        fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // 9. Tabla Carpinteros (NUEVO CATÁLOGO)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS carpinteros (
+        id SERIAL PRIMARY KEY,
+        nombre VARCHAR(255) NOT NULL,
+        telefono VARCHAR(20)
+      );
+    `);
+
+    // 10. Tabla Reparaciones / Intermedia (ACTUALIZADA PARA MUCHOS A MUCHOS)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS reparaciones (
+        id SERIAL PRIMARY KEY,
+        id_mobiliario INTEGER REFERENCES mobiliario(id) ON DELETE CASCADE,
+        id_carpintero INTEGER REFERENCES carpinteros(id) ON DELETE CASCADE,
+        cantidad INTEGER NOT NULL,
+        fecha_envio DATE NOT NULL,
+        fecha_regreso DATE NOT NULL,
+        detalles TEXT,
+        id_estatus INTEGER DEFAULT 1
+      );
+    `);
+
     // Crear admin por defecto si la tabla está vacía
     const checkUsers = await pool.query('SELECT * FROM usuarios');
     if (checkUsers.rows.length === 0) {
@@ -125,7 +159,7 @@ initDB();
 //rutas del loggin
 app.post('/api/login', async (req, res) => {
   const { usuario, password } = req.body;
-  
+
   try {
     // MAGIA AQUÍ: Usamos LOWER() en SQL para ignorar mayúsculas/minúsculas en el usuario
     const query = 'SELECT * FROM usuarios WHERE LOWER(usuario) = LOWER($1)';
@@ -144,9 +178,9 @@ app.post('/api/login', async (req, res) => {
 
     if (passwordValida) {
       // Login exitoso, enviamos los datos del usuario (sin el password)
-      res.json({ 
-        success: true, 
-        data: { id: user.id, nombre: user.nombre, usuario: user.usuario, puesto: user.puesto } 
+      res.json({
+        success: true,
+        data: { id: user.id, nombre: user.nombre, usuario: user.usuario, puesto: user.puesto }
       });
     } else {
       res.status(401).json({ success: false, message: 'Contraseña incorrecta' });
@@ -228,7 +262,7 @@ app.put('/api/mobiliario/:id', async (req, res) => {
       WHERE id = $6 RETURNING *
     `;
     const result = await pool.query(updateQuery, [nombre, tipo, precio, cantidad_disponible, id_categoria, id]);
-    
+
     if (result.rows.length > 0) {
       res.json({ success: true, message: 'Mobiliario actualizado', data: result.rows[0] });
     } else {
@@ -240,7 +274,7 @@ app.put('/api/mobiliario/:id', async (req, res) => {
   }
 });
 
-//eliminar mobiliario
+// Eliminar mobiliario
 app.delete('/api/mobiliario/:id', async (req, res) => {
   const { id } = req.params;
   try {
@@ -253,6 +287,14 @@ app.delete('/api/mobiliario/:id', async (req, res) => {
       res.status(404).json({ success: false, message: 'Mobiliario no encontrado' });
     }
   } catch (error) {
+    if (error.code === '23503') {
+      console.log(`Intento de borrado bloqueado: El mueble ID ${id} tiene historial de rentas.`);
+
+      return res.status(400).json({
+        success: false,
+        message: 'No puedes borrar este mueble porque ya está en un pedido. Si ya no lo tienes, mejor edítalo y pon su stock en 0.'
+      });
+    }
     console.error('Error al eliminar mobiliario:', error);
     res.status(500).json({ success: false, message: 'Error interno al eliminar' });
   }
@@ -287,7 +329,7 @@ app.delete('/api/categorias/:id', async (req, res) => {
   try {
     const catRes = await pool.query('SELECT categoria FROM categorias WHERE id = $1', [id]);
     if (catRes.rows.length === 0) return res.status(404).json({ success: false, message: 'No encontrada' });
-    
+
     const nombreCategoria = catRes.rows[0].categoria;
     const mobRes = await pool.query('SELECT COUNT(*) FROM mobiliario WHERE tipo = $1', [nombreCategoria]);
     const cantidadEnUso = parseInt(mobRes.rows[0].count);
@@ -353,9 +395,9 @@ app.delete('/api/clientes/:id', async (req, res) => {
     const cantidadRentas = parseInt(rentasRes.rows[0].count);
 
     if (cantidadRentas > 0) {
-      return res.status(400).json({ 
-        success: false, 
-        message: `Acción denegada: Este cliente tiene ${cantidadRentas} renta(s) en el historial.` 
+      return res.status(400).json({
+        success: false,
+        message: `Acción denegada: Este cliente tiene ${cantidadRentas} renta(s) en el historial.`
       });
     }
 
@@ -420,7 +462,7 @@ app.get('/api/solicitudes/:id/detalles', async (req, res) => {
 //crear una nueva renta
 app.post('/api/solicitudes', async (req, res) => {
   const { inicio, fin, total, id_cliente, id_estatus, id_usuario, carrito } = req.body;
-  const client = await pool.connect(); 
+  const client = await pool.connect();
 
   try {
     await client.query('BEGIN'); //inicia la transacción
@@ -461,7 +503,7 @@ app.post('/api/solicitudes', async (req, res) => {
 //actualiza el estatus de una renta
 app.put('/api/solicitudes/:id/estatus', async (req, res) => {
   const { id } = req.params;
-  const { id_estatus } = req.body; 
+  const { id_estatus } = req.body;
   const client = await pool.connect();
 
   try {
@@ -478,7 +520,7 @@ app.put('/api/solicitudes/:id/estatus', async (req, res) => {
     //si cambia a Completada o Cancelada, devolver inventario
     if ((id_estatus === 3 || id_estatus === 4) && (estatusActual !== 3 && estatusActual !== 4)) {
       const detallesRes = await client.query('SELECT id_mobiliario, cantidad FROM detalles WHERE id_solicitud = $1', [id]);
-      
+
       for (let item of detallesRes.rows) {
         await client.query(
           'UPDATE mobiliario SET cantidad_disponible = cantidad_disponible + $1 WHERE id = $2',
@@ -499,12 +541,106 @@ app.put('/api/solicitudes/:id/estatus', async (req, res) => {
   }
 });
 
+
+// ==========================================
+// RUTAS DE REPARACIONES (ACTUALIZADO A MUCHOS A MUCHOS)
+// ==========================================
+app.post('/api/reparaciones', async (req, res) => {
+  const { id_mobiliario, id_carpintero, cantidad, fecha_envio, fecha_regreso, detalles } = req.body;
+  try {
+    const query = `
+      INSERT INTO reparaciones (id_mobiliario, id_carpintero, cantidad, fecha_envio, fecha_regreso, detalles, id_estatus) 
+      VALUES ($1, $2, $3, $4, $5, $6, 1) RETURNING *`;
+    const result = await pool.query(query, [id_mobiliario, id_carpintero, cantidad, fecha_envio, fecha_regreso, detalles]);
+    res.json({ success: true, data: result.rows[0] });
+  } catch (error) { 
+    console.error(error);
+    res.status(500).json({ success: false, message: 'Error al registrar' }); 
+  }
+});
+
+app.get('/api/reparaciones', async (req, res) => {
+  try {
+    const query = `
+      SELECT r.*, m.nombre AS nombre_mueble, c.nombre AS nombre_carpintero 
+      FROM reparaciones r 
+      JOIN mobiliario m ON r.id_mobiliario = m.id 
+      JOIN carpinteros c ON r.id_carpintero = c.id
+      ORDER BY r.id DESC`;
+    const result = await pool.query(query);
+    res.json({ success: true, data: result.rows });
+  } catch (error) { 
+    res.status(500).json({ success: false, message: 'Error al cargar historial' }); 
+  }
+});
+
+app.put('/api/reparaciones/:id/completar', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const query = 'UPDATE reparaciones SET id_estatus = 2 WHERE id = $1 RETURNING *';
+    const result = await pool.query(query, [id]);
+    res.json({ success: true, data: result.rows[0] });
+  } catch (error) { res.status(500).json({ success: false, message: 'Error' }); }
+});
+
+// RUTAS DE PAGOS Y ESTADO DE CUENTA
+
+// 1. Obtener el estado de cuenta general (Une Solicitudes con Clientes y calcula deudas)
+app.get('/api/pagos/estado-cuenta', async (req, res) => {
+  try {
+    const query = `
+      SELECT 
+        s.id AS folio,
+        c.nombre AS cliente,
+        s.inicio,
+        s.fin,
+        s.total,
+        COALESCE(SUM(p.monto), 0) AS total_pagado,
+        (s.total - COALESCE(SUM(p.monto), 0)) AS adeudo,
+        s.id_estatus
+      FROM solicitudes s
+      JOIN clientes c ON s.id_cliente = c.id
+      LEFT JOIN pagos p ON s.id = p.id_solicitud
+      GROUP BY s.id, c.nombre, s.inicio, s.fin, s.total, s.id_estatus
+      ORDER BY s.id DESC
+    `;
+    const result = await pool.query(query);
+    res.json({ success: true, data: result.rows });
+  } catch (error) {
+    console.error('Error al obtener estado de cuenta:', error);
+    res.status(500).json({ success: false, message: 'Error al cargar el flujo de caja' });
+  }
+});
+
+// 2. Registrar un nuevo abono/pago a una solicitud
+app.post('/api/pagos', async (req, res) => {
+  const { id_solicitud, monto, metodo } = req.body;
+  try {
+    // Insertamos el registro del abono
+    const query = 'INSERT INTO pagos (id_solicitud, monto, metodo) VALUES ($1, $2, $3) RETURNING *';
+    const result = await pool.query(query, [id_solicitud, monto, metodo]);
+    
+    res.json({ success: true, message: 'Abono registrado con éxito', data: result.rows[0] });
+  } catch (error) {
+    console.error('Error al registrar pago:', error);
+    res.status(500).json({ success: false, message: 'Error al procesar el abono en el servidor' });
+  }
+});
+
+// 3. Ver el historial de abonos realizados a un folio específico
+app.get('/api/pagos/:id_solicitud', async (req, res) => {
+  const { id_solicitud } = req.params;
+  try {
+    const query = 'SELECT * FROM pagos WHERE id_solicitud = $1 ORDER BY fecha DESC';
+    const result = await pool.query(query, [id_solicitud]);
+    res.json({ success: true, data: result.rows });
+  } catch (error) {
+    console.error('Error al obtener historial de abonos:', error);
+    res.status(500).json({ success: false, message: 'Error al cargar el historial de recibos' });
+  }
+});
+
 //rutas de usuarios
-
-
-// ==========================================
-// RUTAS DE USUARIOS (EMPLEADOS Y ADMINS)
-// ==========================================
 
 // Obtener todos los usuarios (sin enviar las contraseñas por seguridad)
 app.get('/api/usuarios', async (req, res) => {
@@ -526,7 +662,7 @@ app.post('/api/usuarios', async (req, res) => {
 
     const query = `INSERT INTO usuarios (nombre, usuario, password, puesto, telefono) VALUES ($1, $2, $3, $4, $5) RETURNING id, nombre, usuario, puesto, telefono`;
     const result = await pool.query(query, [nombre, usuario, hashedPassword, puesto, telefono]);
-    
+
     res.json({ success: true, message: 'Usuario creado con éxito', data: result.rows[0] });
   } catch (error) {
     console.error('Error al agregar usuario:', error);
@@ -541,7 +677,7 @@ app.put('/api/usuarios/:id', async (req, res) => {
   try {
     let query;
     let params;
-    
+
     // Si se escribió una contraseña nueva, la ENCRIPTAMOS y la actualizamos.
     if (password && password.trim() !== '') {
       const hashedPassword = await bcrypt.hash(password, 10); // 🔐 Encriptar nueva clave
@@ -579,6 +715,30 @@ app.delete('/api/usuarios/:id', async (req, res) => {
     res.status(500).json({ success: false, message: 'Error interno al eliminar. Posiblemente este usuario ya registró rentas.' });
   }
 });
+
+// RUTAS DE CARPINTEROS (NUEVO CATÁLOGO)
+// ==========================================
+app.get('/api/carpinteros', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM carpinteros ORDER BY nombre ASC');
+    res.json({ success: true, data: result.rows });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Error al cargar carpinteros' });
+  }
+});
+
+app.post('/api/carpinteros', async (req, res) => {
+  const { nombre, telefono } = req.body;
+  try {
+    const query = 'INSERT INTO carpinteros (nombre, telefono) VALUES ($1, $2) RETURNING *';
+    const result = await pool.query(query, [nombre, telefono]);
+    res.json({ success: true, data: result.rows[0] });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Error al registrar carpintero' });
+  }
+});
+
+
 
 const PORT = 3000;
 app.listen(PORT, () => {

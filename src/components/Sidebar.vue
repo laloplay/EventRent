@@ -39,7 +39,7 @@
 
 <script setup>
 import { computed } from 'vue';
-import { LayoutDashboard, Package, ClipboardList, Users, CreditCard, User, UserCog } from 'lucide-vue-next';
+import { LayoutDashboard, Package, ClipboardList, Users, CreditCard, User, UserCog, Wrench } from 'lucide-vue-next';
 
 // Recibimos al usuario desde App.vue
 const props = defineProps(['activeView', 'usuario']);
@@ -61,7 +61,10 @@ const menuItems = [
   { id: 'rentas', name: 'Rentas y Pedidos', icon: ClipboardList },
   { id: 'clientes', name: 'Clientes', icon: Users },
   { id: 'pagos', name: 'Control de Pagos', icon: CreditCard },
-  { id: 'usuarios', name: 'Gestión de Usuarios', icon: UserCog, soloAdmin: true }, // <-- NUEVO BOTÓN PROTEGIDO
+  { id: 'reparaciones', name: 'Mantenimiento', icon: Wrench },
+  { id: 'usuarios', name: 'Gestión de Usuarios', icon: UserCog, soloAdmin: true },
+
+  // <-- NUEVO BOTÓN PROTEGIDO
 ];
 </script>
 
